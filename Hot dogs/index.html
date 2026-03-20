@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hot Dogs POS</title>
+
+<style>
+body{font-family:Arial;background:#111;color:#fff;margin:0;padding:10px}
+h2{margin-top:15px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+button{padding:18px;font-size:16px;border-radius:12px;border:none}
+.product{background:#ff9800;color:#000;font-weight:bold}
+.mainProduct{background:#ff5722;color:#fff;font-weight:bold;font-size:20px}
+.cart{background:#222;padding:10px;border-radius:10px;margin-bottom:10px}
+.total{font-size:26px;margin-top:10px}
+.pay{background:#4caf50;color:#fff}
+.clear{background:#f44336;color:#fff}
+.reset{background:#9c27b0;color:#fff}
+.stats{background:#1e1e1e;padding:10px;border-radius:10px;margin-top:10px}
+.ticket{background:#2a2a2a;padding:10px;border-radius:10px;margin-bottom:10px}
+.ticket-header{font-weight:bold;margin-bottom:5px}
+.delete-btn{background:#ff4444;color:#fff;border:none;border-radius:8px;padding:5px 10px;margin-top:5px;font-size:12px}
+.undo{background:#2196f3;color:#fff;margin-top:10px;padding:10px;border-radius:10px;text-align:center}
+select{width:100%;padding:10px;border-radius:10px;margin-top:5px}
+</style>
+</head>
+
+<body>
+
+<div style="text-align:center;margin-bottom:10px;">
+<img src="logo.jpg" style="width:180px;border-radius:20px;">
+</div>
+
+<div class="stats">
+<h3>Seleccionar día</h3>
+<select id="daySelector" onchange="changeDay(this.value)"></select>
+</div>
+
+<div id="products"></div>
+
+<div class="cart">
+<h3>Pedido actual</h3>
+<ul id="cart"></ul>
+<div class="total">Total: $<span id="total">0</span></div>
+</div>
+
+<div class="grid">
+<button class="pay" onclick="pay('efectivo')">💵 Efectivo</button>
+<button class="pay" onclick="pay('transferencia')">📲 Transferencia</button>
+<button class="pay" onclick="pay('tarjeta')">💳 Tarjeta</button>
+<button class="clear" onclick="clearCart()">❌ Cancelar</button>
+<button class="reset" onclick="resetDay()">🆕 Nuevo día</button>
+</div>
+
+<div class="stats">
+<h3>Ventas del día</h3>
+<div>💵 Efectivo: $<span id="cash">0</span></div>
+<div>📲 Transferencia: $<span id="transfer">0</span></div>
+<div>💳 Tarjeta: $<span id="card">0</span></div>
+<div>🏦 Fondo: $<span id="fondo">0</span></div>
+<div><b>Total: $<span id="daytotal">0</span></b></div>
+<div><b>Ganancia: $<span id="ganancia">0</span></b></div>
+</div>
+
+<div class="stats">
+<h3>Historial de ventas</h3>
+<ul id="history"></ul>
+</div>
+
+<div class="stats">
+<h3>Resumen de productos vendidos</h3>
+<ul id="productSummary"></ul>
+</div>
+
+<div id="undoBox"></div>
+
+<script>
+
+const PIN="1234";
+
+// SONIDOS
+const clickSound=new Audio("https://www.soundjay.com/buttons/sounds/button-16.mp3");
+const cashSound=new Audio("https://www.soundjay.com/misc/sounds/cash-register-01.mp3");
+
+// DATA GLOBAL POR DÍA
+let allData=JSON.parse(localStorage.getItem("allData"))||{};
+let currentDate=new Date().toLocaleDateString();
+
+if(!allData[currentDate]){
+allData[currentDate]={
+history:[],
+productSales:{},
+totals:{efectivo:0,transferencia:0,tarjeta:0},
+fondoCaja:parseFloat(prompt("¿Cuánto dinero hay en caja?")||0)
+};
+}
+
+let history=allData[currentDate].history;
+let productSales=allData[currentDate].productSales;
+let totals=allData[currentDate].totals;
+let fondoCaja=allData[currentDate].fondoCaja;
+let lastDeleted=null;
+
+// PRODUCTOS
+const categories=[{name:"🌭 Hot Dogs",items:[
+{name:"Hot dog sencillo",price:50,main:true},
+{name:"Sencillo con papas",price:60},
+{name:"Doble winni",price:55},
+{name:"Doble winni con papas",price:65},
+{name:"Hot dog especial",price:75},
+{name:"Especial con papas",price:80}]},
+{name:"🍟 Salchipapas",items:[
+{name:"Salchipapas tradicional",price:60},
+{name:"Salchipapas especial",price:70}]},
+{name:"🥗 Ensaladas",items:[
+{name:"Ensalada tradicional",price:50},
+{name:"Ensalada tradicional con papas",price:55},
+{name:"Ensalada especial",price:65},
+{name:"Ensalada especial con papas",price:70}]},
+{name:"🍟 Papas",items:[
+{name:"Orden chica",price:30,main:true},
+{name:"Orden de papas",price:50}]},
+{name:"🥤 Bebidas",items:[
+{name:"Coca 500",price:25},
+{name:"Coca 600",price:30}]},
+{name:"➕ Extras",items:[
+{name:"Winni (extra)",price:10},
+{name:"Especial extra",price:30}]}];
+
+let cart={};
+
+// RENDER PRODUCTOS
+const prodDiv=document.getElementById("products");
+categories.forEach(cat=>{
+let title=document.createElement("h2");
+title.innerText=cat.name;
+prodDiv.appendChild(title);
+
+let grid=document.createElement("div");
+grid.className="grid";
+
+cat.items.forEach(p=>{
+let b=document.createElement("button");
+b.className=p.main?"mainProduct":"product";
+b.innerText=`${p.name} $${p.price}`;
+b.onclick=()=>add(p);
+grid.appendChild(b);
+});
+
+prodDiv.appendChild(grid);
+});
+
+// FUNCIONES
+function add(p){
+if(navigator.vibrate) navigator.vibrate(30);
+clickSound.currentTime=0;clickSound.play();
+if(!cart[p.name]) cart[p.name]={qty:0,price:p.price};
+cart[p.name].qty++;
+renderCart();
+}
+
+function renderCart(){
+let ul=document.getElementById("cart");
+ul.innerHTML="";
+let total=0;
+for(let k in cart){
+let li=document.createElement("li");
+li.innerText=`${cart[k].qty} x ${k} = $${cart[k].qty*cart[k].price}`;
+ul.appendChild(li);
+total+=cart[k].qty*cart[k].price;
+}
+document.getElementById("total").innerText=total;
+}
+
+function clearCart(){cart={};renderCart();}
+
+function pay(type){
+let total=parseInt(document.getElementById("total").innerText);
+if(total===0)return;
+
+cashSound.play();
+
+let items=[];
+for(let k in cart){
+items.push({name:k,qty:cart[k].qty});
+if(!productSales[k]) productSales[k]=0;
+productSales[k]+=cart[k].qty;
+}
+
+history.unshift({total,type,items,time:new Date().toLocaleTimeString()});
+totals[type]+=total;
+
+guardarTodo();
+updateStats();
+renderHistory();
+renderProductSummary();
+clearCart();
+}
+
+function guardarTodo(){
+allData[currentDate]={history,productSales,totals,fondoCaja};
+localStorage.setItem("allData",JSON.stringify(allData));
+}
+
+function deleteTicket(i,h){
+let pin=prompt("PIN:");
+if(pin!==PIN)return alert("Incorrecto");
+
+lastDeleted={ticket:h,index:i};
+
+totals[h.type]-=h.total;
+h.items.forEach(it=>{
+productSales[it.name]-=it.qty;
+if(productSales[it.name]<=0) delete productSales[it.name];
+});
+
+history.splice(i,1);
+
+guardarTodo();
+updateStats();
+renderHistory();
+renderProductSummary();
+mostrarUndo();
+}
+
+function mostrarUndo(){
+let box=document.getElementById("undoBox");
+box.innerHTML=`<div class="undo">Ticket eliminado <button onclick="undoDelete()">DESHACER</button></div>`;
+setTimeout(()=>box.innerHTML="",5000);
+}
+
+function undoDelete(){
+if(!lastDeleted)return;
+
+history.splice(lastDeleted.index,0,lastDeleted.ticket);
+totals[lastDeleted.ticket.type]+=lastDeleted.ticket.total;
+
+lastDeleted.ticket.items.forEach(it=>{
+if(!productSales[it.name]) productSales[it.name]=0;
+productSales[it.name]+=it.qty;
+});
+
+guardarTodo();
+updateStats();
+renderHistory();
+renderProductSummary();
+}
+
+function renderHistory(){
+let ul=document.getElementById("history");
+ul.innerHTML="";
+history.forEach((h,i)=>{
+let num=history.length-i;
+
+let li=document.createElement("li");
+li.className="ticket";
+li.innerHTML=`<div class="ticket-header">#${num} - $${h.total} (${h.type}) - ${h.time}</div>`;
+
+h.items.forEach(it=>{
+let p=document.createElement("div");
+p.innerText=`${it.qty} x ${it.name}`;
+li.appendChild(p);
+});
+
+let del=document.createElement("button");
+del.className="delete-btn";
+del.innerText="Eliminar";
+del.onclick=()=>deleteTicket(i,h);
+
+li.appendChild(del);
+ul.appendChild(li);
+});
+}
+
+function renderProductSummary(){
+let ul=document.getElementById("productSummary");
+ul.innerHTML="";
+Object.entries(productSales).sort((a,b)=>b[1]-a[1]).forEach(([n,q])=>{
+let li=document.createElement("li");
+li.innerText=`${n} → ${q}`;
+ul.appendChild(li);
+});
+}
+
+function updateStats(){
+document.getElementById("cash").innerText=totals.efectivo;
+document.getElementById("transfer").innerText=totals.transferencia;
+document.getElementById("card").innerText=totals.tarjeta;
+
+let total=totals.efectivo+totals.transferencia+totals.tarjeta;
+
+document.getElementById("daytotal").innerText=total;
+document.getElementById("fondo").innerText=fondoCaja;
+document.getElementById("ganancia").innerText=(total-fondoCaja);
+}
+
+function resetDay(){
+let nueva=new Date().toLocaleDateString();
+
+if(!allData[nueva]){
+allData[nueva]={
+history:[],
+productSales:{},
+totals:{efectivo:0,transferencia:0,tarjeta:0},
+fondoCaja:parseFloat(prompt("¿Fondo de caja?")||0)
+};
+}
+
+localStorage.setItem("allData",JSON.stringify(allData));
+location.reload();
+}
+
+function loadDays(){
+let sel=document.getElementById("daySelector");
+sel.innerHTML="";
+Object.keys(allData).forEach(d=>{
+let op=document.createElement("option");
+op.value=d;op.textContent=d;
+if(d===currentDate) op.selected=true;
+sel.appendChild(op);
+});
+}
+
+function changeDay(d){
+currentDate=d;
+history=allData[d].history;
+productSales=allData[d].productSales;
+totals=allData[d].totals;
+fondoCaja=allData[d].fondoCaja;
+
+updateStats();
+renderHistory();
+renderProductSummary();
+}
+
+loadDays();
+updateStats();
+renderHistory();
+renderProductSummary();
+
+</script>
+
+</body>
+</html>
